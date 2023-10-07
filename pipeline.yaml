@@ -1,0 +1,81 @@
+trigger:
+    batch: true
+    branches:
+      include:
+      - main
+  
+pool:
+  vmImage: ubuntu-latest
+
+parameters:
+- name : Environment
+  displayName: Environment to deploy.
+  type: string
+  default: Dev
+  values:
+  - Dev
+  - QA
+  - Staging
+  - Prod
+- name : CustomerID
+  displayName: Customer ID of the client.
+  type: string
+  default: '0888'
+
+variables:
+- group: GlobalVariables
+- name: DeploymentDefaultLocation
+  value: 'westeurope'
+- name: ResourceGroupName
+  value: "${{ parameters.CustomerID }}-${{ parameters.Environment }}-RG"
+- name: ServiceConnectionName
+  value: 'ARMConnection'
+
+stages:
+- stage: Stage1
+  displayName: "Stage 1 - Display Variables"
+  jobs:
+  - job:
+    steps:
+    - script: |
+        echo AzSubscriptionID $(AzSubscriptionID)
+      displayName: 'echo group GlobalVariables variables'
+    - script: |
+        echo Buildnumber $(Build.BuildNumber)
+        echo ServiceConnectionName $(ServiceConnectionName)
+        echo DeploymentDefaultLocation $(DeploymentDefaultLocation)
+        echo ResourceGroupName $(ResourceGroupName)
+      displayName: 'echo Variables'
+    - script: |
+        echo Environment ${{ parameters.Environment }}
+        echo CustomerID ${{ parameters.CustomerID }}
+      displayName: 'echo Parameters'
+- stage: Stage2
+  displayName: "Stage 2 - Deploy Bicep"
+  jobs:
+  - job:
+    steps:
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploying storage
+      inputs:
+        connectedServiceName: $(ServiceConnectionName)
+        deploymentName: $(Build.BuildNumber)
+        location: $(DeploymentDefaultLocation)
+        resourceGroupName: $(ResourceGroupName)
+        csmFile: deployments/storage.bicep
+        overrideParameters: >
+          -environmentType ${{ parameters.environment }}
+          -CustomerID ${{ parameters.CustomerID }}
+        deploymentMode: 'Incremental'
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploying main.bicep
+      inputs:
+        connectedServiceName: $(ServiceConnectionName)
+        deploymentName: $(Build.BuildNumber)
+        location: $(DeploymentDefaultLocation)
+        resourceGroupName: $(ResourceGroupName)
+        csmFile: deployments/main.bicep
+        overrideParameters: >
+          -namePrefix ${{ parameters.CustomerID }}
+          -resourceGroupName $(ResourceGroupName)
+          -password $(VMAdminPWD)
